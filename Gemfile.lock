@@ -1,0 +1,23 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    concurrent-ruby (1.2.2)
+    hamster (3.0.0)
+      concurrent-ruby (~> 1.0)
+    immutable-struct (2.4.1)
+    lino (3.1.0)
+      hamster (~> 3.0)
+      open4 (~> 1.3)
+    open4 (1.3.4)
+    ruby-terraform (1.7.0)
+      immutable-struct (~> 2.4)
+      lino (~> 3.0)
+
+PLATFORMS
+  arm64-darwin-21
+
+DEPENDENCIES
+  ruby-terraform
+
+BUNDLED WITH
+   2.4.7
