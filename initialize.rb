@@ -1,36 +1,65 @@
-require 'ruby-terraform'
-
 require 'json'
-INPUT_FILENAME = "./initialization_inputs.json"
 
-resource_names = JSON.parse(File.read(INPUT_FILENAME))
-resource_names["LARIDAE_CLUSTER"] = "laridae_#{resource_names["IMAGE_NAME"]}_cluster"
-resource_names["LARIDAE_TASK_DEFINITION"] = "laridae_#{resource_names["IMAGE_NAME"]}_task_definition"
+def welcome_ascii
+  <<~ASCII
 
-resources_for_initialization = resource_names.slice("REGION", "DATABASE_URL", "LARIDAE_CLUSTER", "VPC_ID", "LARIDAE_TASK_DEFINITION")
-puts "Creating necessary AWS resources..."
+                      /(((((((
+                    //((((((
+                  /////(((
+              ////////
+    %%%%%%%%    ////////
+      %%%%%%%%    ////////
+        %%%%%%%%    ////////
+            %%%%%%%%   ////////
+          &&%%%%%%
+        &&&&&%%%
+      &&&&&&&%
+    &&&&&&&%
 
-RubyTerraform.init
-RubyTerraform.destroy(chdir: __dir__, vars: resources_for_initialization, auto_approve: true)
-RubyTerraform.apply(chdir: __dir__, vars: resources_for_initialization, auto_approve: true)
+     _            _     _
+    | | __ _ _ __(_) __| | __ _  ___
+    | |/ _` | '__| |/ _` |/ _` |/ _ \\
+    | | (_| | |  | | (_| | (_| |  __\/
+    |_|\\__,_|_|  |_|\\__,_|\\__,_|\\___|
 
-resource_names["LARIDAE_SECURITY_GROUP"] = RubyTerraform.output(name: "security_group_id").gsub('"', "")
-runner_access_key_id = RubyTerraform.output(name: "ecs_access_key_id").gsub('"', "")
-runner_secret_access_key = RubyTerraform.output(name: "ecs_secret_access_key").gsub('"', "")
+  ASCII
+end
 
-`aws ec2 authorize-security-group-ingress --region #{resource_names["REGION"]} --group-id #{resource_names["DATABASE_SECURITY_GROUP"]} --protocol tcp --port 5432 --source-group #{resource_names["LARIDAE_SECURITY_GROUP"]}`
+def init
+  if ARGV.length == 1
+    input_filename = ARGV[0]
+  else
+    puts "Invalid arguments"
+    return
+  end
+  resource_names = JSON.parse(File.read(input_filename))
+  resource_names["LARIDAE_CLUSTER"] = "laridae_#{resource_names["IMAGE_NAME"]}_cluster"
+  resource_names["LARIDAE_TASK_DEFINITION"] = "laridae_#{resource_names["IMAGE_NAME"]}_task_definition"
 
-secret = resource_names.map { |key, value| "#{key}=#{value}"}.join("\n")
-puts <<~HEREDOC
+  puts welcome_ascii
 
-======================================================================================
+  resources_for_initialization = resource_names.slice("REGION", "DATABASE_URL", "LARIDAE_CLUSTER", "VPC_ID", "LARIDAE_TASK_DEFINITION")
+  var_flags = resources_for_initialization.map { |name, value| "-var=\"#{name}=#{value}\"" }.join(' ')
+  puts "Preparing to create AWS resources..."
+  `terraform init`
+  `terraform destroy #{var_flags} --auto-approve`
+  puts "Creating AWS resources..."
+  `terraform apply #{var_flags} --auto-approve`
 
-Add a secret to your Github repo called AWS_RESOURCE_NAMES with the following content:
+  resource_names["LARIDAE_SECURITY_GROUP"] = `terraform output security_group_id`.gsub('"', "").chomp
+  resource_names["ACCESS_KEY_ID"] = `terraform output ecs_access_key_id`.gsub('"', "").chomp
+  resource_names["SECRET_ACCESS_KEY"] = `terraform output ecs_secret_access_key`.gsub('"', "").chomp
 
-#{secret}
+  puts "Altering database security group to allow access from Laridae task..."
+  `aws ec2 authorize-security-group-ingress --region #{resource_names["REGION"]} --group-id #{resource_names["DATABASE_SECURITY_GROUP"]} --protocol tcp --port 5432 --source-group #{resource_names["LARIDAE_SECURITY_GROUP"]}`
+  secret = resource_names.map { |key, value| "#{key}=#{value}"}.join("\n")
+  puts <<~HEREDOC
+  Initialization complete!
 
-and one called AWS_ACCESS_KEY_ID with the following string:
-#{runner_access_key_id}
-and another called AWS_SECRET_ACCESS_KEY with
-#{runner_secret_access_key}
-HEREDOC
+  Add a secret to your Github repo called LARIDAE_RESOURCE_NAMES with the following content:
+
+  #{secret}
+  HEREDOC
+end
+
+init
